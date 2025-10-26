@@ -1,0 +1,50 @@
+{
+  "v": "2",
+  "ps": "Cloudflare-VMess",
+  "add": "vless.yourdomain.com",
+  "port": "443",
+  "id": "YOUR_V2RAY_UUID",
+  "aid": "0",
+  "net": "ws",
+  "type": "none",
+  "host": "vless.yourdomain.com",
+  "path": "/YOUR_V2RAY_UUID",
+  "tls": "tls",
+  "sni": "vless.yourdomain.com"
+}
+
+// PENJELASAN PENGATURAN PENTING:
+// ===================================
+// "ps": "Cloudflare-VMess"
+//   -> Nama koneksi. Anda bisa mengubah ini menjadi apa pun.
+//
+// "add": "vless.yourdomain.com"
+//   -> Ganti dengan domain atau subdomain yang Anda arahkan ke Cloudflare Worker.
+//
+// "port": "443"
+//   -> Biarkan 443. Ini adalah port standar untuk lalu lintas terenkripsi (WSS).
+//
+// "id": "YOUR_V2RAY_UUID"
+//   -> Ganti dengan UUID V2Ray Anda. Harus sama dengan yang ada di skrip worker.
+//
+// "host": "vless.yourdomain.com"
+//   -> Ganti dengan domain Anda. Ini adalah header Host dalam permintaan HTTP.
+//
+// "path": "/YOUR_V2RAY_UUID"
+//   -> Ganti dengan UUID Anda, diawali dengan tanda '/'. Ini adalah "pintu rahasia"
+//      yang diperiksa oleh skrip worker.
+//
+// "tls": "tls"
+//   -> Mengaktifkan enkripsi TLS. Wajib.
+//
+// "sni": "vless.yourdomain.com"
+//   -> Ganti dengan domain Anda. SNI (Server Name Indication) memastikan Cloudflare
+//      mengarahkan permintaan Anda ke Worker yang benar.
+// ===================================
+
+// Cara Menggunakan:
+// 1. Salin format JSON di atas.
+// 2. Ganti placeholder (seperti "vless.yourdomain.com" dan "YOUR_V2RAY_UUID")
+//    dengan nilai Anda yang sebenarnya.
+// 3. Impor konfigurasi ini ke klien V2Ray Anda (misalnya, v2rayN, Qv2ray, AnXray).
+//    Biasanya ada opsi untuk mengimpor dari clipboard atau file.
