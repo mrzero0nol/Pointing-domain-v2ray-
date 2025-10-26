@@ -1,58 +1,72 @@
-# Cloudflare Worker sebagai Reverse Proxy untuk V2Ray
+# Server VLESS di Cloudflare Worker (dengan Metode Wildcard/Bug Host)
 
-Skrip ini mengubah Cloudflare Worker menjadi *reverse proxy* untuk server V2Ray (VMess/VLESS) Anda yang sudah ada. Tujuannya adalah untuk menyembunyikan alamat IP asli server Anda dan memungkinkan Anda menggunakan domain Anda sendiri sebagai alamat koneksi, SNI, dan Host.
+Proyek ini memungkinkan Anda menjalankan server VLESS (V2Ray) sepenuhnya di dalam Cloudflare Worker. Versi ini telah ditingkatkan untuk menggunakan metode **Wildcard/Bug Host**, yang membantu menyamarkan (obfuscate) traffic Anda agar terlihat seperti menuju ke domain populer, sehingga lebih sulit untuk dideteksi atau diblokir.
 
-## Cara Kerja
+## Alur Kerja
 
-1.  **Klien V2Ray** terhubung ke domain Anda yang diarahkan ke Cloudflare Worker.
-2.  **Cloudflare Worker** menerima koneksi WebSocket.
-3.  **Cloudflare Worker** membuka koneksi WebSocket baru ke server V2Ray (VPS) asli Anda yang alamatnya telah Anda konfigurasikan.
-4.  Worker kemudian bertindak sebagai jembatan, meneruskan data bolak-balik antara klien dan server V2Ray Anda.
-
-Dari sudut pandang penyedia internet atau sensor, semua traffic terlihat menuju ke Cloudflare, bukan ke server asli Anda.
+1.  **Pengguna Mengatur Domain**: Anda akan mengatur record DNS wildcard (`*.domainanda.com`) di Cloudflare.
+2.  **Worker Dideploy**: Anda mendeploy skrip worker ini ke akun Cloudflare Anda.
+3.  **Domain Ditautkan**: Anda menautkan domain wildcard Anda ke worker.
+4.  **Konfigurasi Dihasilkan**: Saat Anda mengunjungi worker, worker akan menghasilkan link VLESS khusus. Link ini menggunakan domain populer (`bugHost`) sebagai alamatnya, tetapi secara diam-diam mengarahkan traffic ke domain wildcard Anda melalui header `Host` dan `SNI`.
 
 ---
 
-### Langkah 1: Konfigurasi Skrip
+## Langkah 1: Konfigurasi DNS Wildcard
 
-Satu-satunya hal yang perlu Anda ubah adalah alamat server V2Ray asli Anda.
+Langkah pertama dan paling penting adalah mengatur DNS Anda dengan benar.
 
-1.  Buka file `reverse-proxy-worker.js`.
-2.  Di bagian paling atas, temukan baris ini:
-    ```javascript
-    const UPSTREAM_HOST = '123.45.67.89';
-    ```
-3.  Ganti `123.45.67.89` dengan **alamat IP** atau **domain** dari server V2Ray (VPS) Anda yang sebenarnya.
+**➡️ Ikuti panduan lengkap di sini: [Panduan Pengaturan DNS Wildcard](./WILDCARD_SETUP.md)**
 
 ---
 
-### Langkah 2: Deploy Worker
+## Langkah 2: Konfigurasi Skrip Worker
 
-1.  **Login ke Cloudflare** dan buka menu **Workers & Pages**.
+Sebelum mendeploy, ada **dua hal penting** yang harus Anda konfigurasikan di dalam skrip `vless-worker.js`.
+
+1.  **Ubah `userID`**:
+    *   Buka file `vless-worker.js` dan temukan baris ini:
+        ```javascript
+        const userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4'; // Your UUID
+        ```
+    *   Ganti UUID tersebut dengan UUID V2Ray pribadi Anda.
+
+2.  **Ubah `bugHost` (Opsional)**:
+    *   Skrip ini sudah diatur dengan `bugHost` default. Namun, jika Anda ingin menggantinya, ubah baris ini:
+        ```javascript
+        const bugHost = 'api24-normal-alisg.tiktokv.com'; // Your Bug Host
+        ```
+    *   Ganti dengan domain populer lain yang Anda inginkan.
+
+---
+
+## Langkah 3: Deploy Worker
+
+1.  **Login ke Cloudflare** dan navigasi ke **Workers & Pages**.
 2.  Klik **"Create Application"** > **"Create Worker"**.
-3.  Berikan **nama unik** untuk worker Anda (misalnya, `v2ray-proxy`).
+3.  Berikan **nama unik** untuk worker Anda (misalnya, `vless-wildcard-server`).
 4.  Klik **"Create service"**.
 5.  Klik **"Quick edit"**.
-6.  **Hapus semua kode default**, lalu **salin dan tempel seluruh isi** dari file `reverse-proxy-worker.js` ini.
-7.  Pastikan Anda sudah mengubah `UPSTREAM_HOST` dengan benar.
+6.  **Hapus semua kode default**, lalu **salin dan tempel seluruh isi** dari file `vless-worker.js` proyek ini.
+7.  Pastikan `userID` dan `bugHost` Anda sudah benar.
 8.  Klik **"Save and Deploy"**.
-
-Setelah di-deploy, Anda akan mendapatkan URL untuk worker Anda, seperti `v2ray-proxy.namaanda.workers.dev`.
 
 ---
 
-### Langkah 3: Konfigurasi Klien V2Ray (Contoh: v2rayN)
+## Langkah 4: Tautkan Domain Kustom (PENTING)
 
-Sekarang, konfigurasikan aplikasi klien V2Ray Anda untuk terhubung ke worker, bukan ke server asli Anda.
+Worker Anda sekarang berjalan, tetapi Anda harus memberitahunya untuk menggunakan domain wildcard Anda.
 
-1.  Buka klien V2Ray Anda dan edit profil koneksi Anda.
-2.  Ubah pengaturan berikut:
-    *   **Address (Alamat)**: Masukkan domain worker Anda (misalnya, `v2ray-proxy.namaanda.workers.dev` atau domain kustom Anda jika Anda menautkannya).
-    *   **Port**: `443`
-    *   **UserID / AlterId, dll.**: Biarkan sama seperti konfigurasi server asli Anda.
-    *   **Network (Jaringan)**: `ws` (WebSocket)
-    *   **Host (SNI)**: Masukkan domain worker Anda (sama seperti Address).
-    *   **Path**: Biarkan sama seperti konfigurasi server asli Anda (misalnya, `/vless`).
-    *   **TLS**: Aktifkan (`tls`).
+1.  Di halaman worker yang baru saja Anda deploy, klik tab **"Triggers"**.
+2.  Di bawah bagian "Custom Domains", klik **"Add Custom Domain"**.
+3.  Masukkan domain wildcard yang telah Anda siapkan, misalnya: `*.kangfurqon.my.id`.
+4.  Klik **"Add Custom Domain"**. Cloudflare akan secara otomatis memverifikasi dan menautkan domain tersebut karena DNS-nya sudah Anda kelola.
 
-Simpan konfigurasi dan hubungkan. Traffic Anda sekarang akan dialihkan melalui Cloudflare Worker.
+---
+
+## Langkah 5: Dapatkan dan Gunakan Konfigurasi VLESS
+
+1.  **Buka SALAH SATU subdomain wildcard Anda di browser**. Misalnya, kunjungi `https://random-subdomain.kangfurqon.my.id`.
+2.  Anda akan melihat halaman web yang sama seperti sebelumnya, tetapi sekarang halaman tersebut akan menghasilkan **link VLESS dengan format bug host**.
+3.  **Pindai Kode QR** atau **Salin URL VLESS** ke dalam klien V2Ray Anda.
+
+Server VLESS Anda dengan metode penyamaran sekarang siap digunakan!
