@@ -1,0 +1,36 @@
+{
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "YOUR_WORKER_URL",
+            "port": 443,
+            "users": [
+              {
+                "id": "YOUR_UUID",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "YOUR_WORKER_URL",
+          "allowInsecure": false
+        },
+        "wsSettings": {
+          "path": "/YOUR_UUID",
+          "headers": {
+            "Host": "YOUR_WORKER_URL"
+          }
+        }
+      },
+      "tag": "proxy"
+    }
+  ]
+}
