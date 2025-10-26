@@ -5,11 +5,13 @@
       "settings": {
         "vnext": [
           {
-            "address": "YOUR_WORKER_URL",
+            // Address: Ganti dengan Bug Host yang Anda konfigurasikan di skrip.
+            "address": "api24-normal-alisg.tiktokv.com",
             "port": 443,
             "users": [
               {
-                "id": "YOUR_UUID",
+                // ID: Ganti dengan userID (UUID) yang Anda konfigurasikan di skrip.
+                "id": "d342d11e-d424-4583-b36e-524ab1f0afa4",
                 "encryption": "none"
               }
             ]
@@ -20,13 +22,16 @@
         "network": "ws",
         "security": "tls",
         "tlsSettings": {
-          "serverName": "YOUR_WORKER_URL",
+          // serverName (SNI): Ganti dengan salah satu subdomain wildcard Anda.
+          "serverName": "sub.yourdomain.com",
           "allowInsecure": false
         },
         "wsSettings": {
-          "path": "/YOUR_UUID",
+          // Path: Bisa berupa path acak.
+          "path": "/your-random-path",
           "headers": {
-            "Host": "YOUR_WORKER_URL"
+            // Host: Harus sama dengan serverName (SNI) Anda.
+            "Host": "sub.yourdomain.com"
           }
         }
       },
