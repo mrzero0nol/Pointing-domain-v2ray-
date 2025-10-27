@@ -1,6 +1,6 @@
 # Panduan Pengaturan DNS Wildcard di Cloudflare
 
-Untuk menggunakan metode Bug Host / Wildcard, Anda harus mengkonfigurasi record DNS di Cloudflare agar subdomain acak (`*.domainanda.com`) dapat diarahkan ke Worker Anda.
+Untuk menggunakan metode penyamaran (obfuscation) di klien Anda, di mana Anda menggunakan subdomain acak sebagai `Host` dan `SNI`, Anda harus mengkonfigurasi record DNS wildcard di Cloudflare.
 
 Berikut adalah cara mengaturnya:
 
@@ -31,4 +31,4 @@ Setelah disimpan, Anda akan melihat entri baru di daftar record DNS Anda yang te
 
 ### Selesai!
 
-Itu saja! Dengan pengaturan ini, setiap permintaan ke subdomain acak seperti `subdomain-acak.domainanda.com` akan secara otomatis ditangani oleh jaringan Cloudflare, yang kemudian akan meneruskannya ke Worker Anda setelah Anda menautkannya di langkah berikutnya.
+Itu saja! Dengan pengaturan ini, setiap permintaan ke subdomain acak seperti `subdomain-acak.kangfurqon.my.id` akan secara otomatis ditangani oleh jaringan Cloudflare, yang kemudian akan meneruskannya ke Worker Anda setelah Anda menautkannya di langkah berikutnya.
