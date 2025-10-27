@@ -1,11 +1,23 @@
-// --- Configuration ---
-const userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4'; // Your UUID
-const bugHost = 'api24-normal-alisg.tiktokv.com'; // Your Bug Host (e.g., a popular domain)
-const proxyIPs = ['']; // Optional: Your custom proxy IPs. Leave empty to use default.
-// --------------------
+// --- KONFIGURASI PENGGUNA ---
 
-// --- Static Content ---
-// HTML for the subscription endpoint, displaying a QR code and VLESS link.
+// Ganti dengan UUID V2Ray Anda.
+const userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
+
+// Ganti dengan domain "palsu" yang ingin Anda gunakan untuk menyamarkan traffic.
+const bugHost = 'api24-normal-alisg.tiktokv.com';
+
+// (WAJIB) URL ke file JSON daftar proksi KV Anda.
+// Contoh format file: https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json
+const KV_PRX_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json";
+
+// (WAJIB) URL ke file .txt daftar proksi cadangan Anda.
+// Contoh format file: https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt
+const PRX_BANK_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt";
+
+// --- AKHIR DARI KONFIGURASI PENGGUNA ---
+
+
+// --- HALAMAN HTML BAWAAN ---
 const subHTML = `
 <!DOCTYPE html>
 <html>
@@ -37,228 +49,190 @@ const subHTML = `
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
     function generateVlessLink(uuid, bugHost, actualHost) {
-      // Generate a random path, simulating a real URL structure
       const randomPath = \`/\${Math.random().toString(36).substring(2, 8)}/\${Math.random().toString(36).substring(2, 8)}\`;
       const remarks = "CF-Worker-Wildcard";
-
-      // Construct the VLESS URL using the bug host and actual host (SNI/Host header)
       const vlessLink = \`vless://\${uuid}@\${bugHost}:443?encryption=none&security=tls&sni=\${actualHost}&fp=randomized&type=ws&host=\${actualHost}&path=\${encodeURIComponent(randomPath)}#\${remarks}\`;
-
-      // Display the link
-      const urlElement = document.getElementById('vless-url');
-      urlElement.textContent = vlessLink;
-
-      // Generate QR Code
-      new QRCode(document.getElementById("qrcode"), {
-        text: vlessLink,
-        width: 200,
-        height: 200,
-      });
-
-      // Copy to clipboard
+      document.getElementById('vless-url').textContent = vlessLink;
+      new QRCode(document.getElementById("qrcode"), { text: vlessLink, width: 200, height: 200 });
       document.getElementById('copy-button').addEventListener('click', () => {
-        navigator.clipboard.writeText(vlessLink).then(() => {
-          alert('VLESS link copied to clipboard!');
-        }).catch(err => {
-          console.error('Failed to copy text: ', err);
-        });
+        navigator.clipboard.writeText(vlessLink).then(() => alert('VLESS link copied!'));
       });
     }
-
-    // Get the actual domain from the URL
-    const actualDomain = window.location.hostname;
-    // Get the UUID and Bug Host from the Worker script configuration
-    const userUUID = "${userID}";
-    const configuredBugHost = "${bugHost}";
-    generateVlessLink(userUUID, configuredBugHost, actualDomain);
+    generateVlessLink("${userID}", "${bugHost}", window.location.hostname);
   </script>
 </body>
 </html>
 `;
 
-// --- Worker Logic ---
+// --- LOGIKA INTI WORKER ---
 
-// Main fetch event listener
+let proxyLists = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 15 * 60 * 1000; // 15 menit
+
+async function fetchProxyLists() {
+    const now = Date.now();
+    if (proxyLists && (now - lastFetchTime < CACHE_DURATION)) {
+        return proxyLists;
+    }
+
+    try {
+        const [kvResponse, bankResponse] = await Promise.all([
+            fetch(KV_PRX_URL).then(res => res.json()),
+            fetch(PRX_BANK_URL).then(res => res.text())
+        ]);
+
+        const bankProxies = bankResponse.trim().split('\n').map(p => p.trim());
+        const combined = [...kvResponse.proxy, ...bankProxies];
+        proxyLists = [...new Set(combined)]; // Hapus duplikat
+        lastFetchTime = now;
+        console.log(`Successfully fetched and combined ${proxyLists.length} proxies.`);
+    } catch (error) {
+        console.error("Failed to fetch proxy lists:", error);
+        // Jika gagal, gunakan daftar yang lama jika ada
+        if (!proxyLists) {
+            proxyLists = [];
+        }
+    }
+    return proxyLists;
+}
+
+function getRandomProxy() {
+    if (!proxyLists || proxyLists.length === 0) {
+        return null;
+    }
+    const randomIndex = Math.floor(Math.random() * proxyLists.length);
+    return proxyLists[randomIndex];
+}
+
+
 addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-
-  // Serve the HTML page on the root path.
-  // For all other paths, attempt to handle as a WebSocket request.
-  if (url.pathname === '/') {
-    event.respondWith(
-      new Response(subHTML, {
-        headers: { 'Content-Type': 'text/html;charset=UTF-8' },
-      })
-    );
-  } else {
-    event.respondWith(handleVlessRequest(event.request));
-  }
+    const url = new URL(event.request.url);
+    if (url.pathname === '/') {
+        event.respondWith(new Response(subHTML, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } }));
+    } else {
+        event.respondWith(handleVlessRequest(event.request));
+    }
 });
 
-/**
- * Handles VLESS WebSocket requests.
- * @param {Request} request
- */
 async function handleVlessRequest(request) {
-  const upgradeHeader = request.headers.get('Upgrade');
-  if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
-    return new Response('Expected a WebSocket upgrade request.', { status: 426 });
-  }
-
-  const [clientWs, serverWs] = Object.values(new WebSocketPair());
-  serverWs.accept();
-
-  // Handle the first message from the client, which contains the VLESS header.
-  serverWs.addEventListener('message', async (event) => {
-    try {
-      const { receivedUserID, address, port, data } = parseVlessHeader(event.data);
-
-      // Security Check: Validate the received UUID against the configured userID.
-      if (receivedUserID !== userID) {
-        serverWs.close(1008, 'Invalid user');
-        return;
-      }
-
-      // Connect to the requested destination.
-      const remoteSocket = await connectToRemote(address, port, serverWs);
-      // Write the initial data packet.
-      remoteSocket.write(data);
-    } catch (error) {
-      console.error('Error processing VLESS message:', error);
-      serverWs.close(1011, error.message);
+    if (request.headers.get('Upgrade') !== 'websocket') {
+        return new Response('Expected websocket', { status: 426 });
     }
-  }, { once: true }); // Important: This listener should only run once to avoid conflicts.
 
-  // Handle WebSocket closure.
-  serverWs.addEventListener('close', () => {
-    console.log('Client WebSocket closed.');
-  });
-  serverWs.addEventListener('error', (err) => {
-    console.error('Client WebSocket error:', err);
-  });
+    const [clientWs, serverWs] = Object.values(new WebSocketPair());
+    serverWs.accept();
 
-  // Return the server-side WebSocket to the Cloudflare runtime.
-  return new Response(null, {
-    status: 101,
-    webSocket: clientWs,
-  });
+    serverWs.addEventListener('message', async (event) => {
+        try {
+            const { receivedUserID, address, port, data } = parseVlessHeader(event.data);
+            if (receivedUserID !== userID) {
+                serverWs.close(1008, 'Invalid user');
+                return;
+            }
+
+            await fetchProxyLists();
+            const proxyAddress = getRandomProxy();
+            if (!proxyAddress) {
+                serverWs.close(1011, 'No available proxy');
+                return;
+            }
+
+            proxyConnection(serverWs, proxyAddress, address, port, data);
+
+        } catch (err) {
+            serverWs.close(1011, err.message);
+        }
+    }, { once: true });
+
+    return new Response(null, { status: 101, webSocket: clientWs });
 }
 
-/**
- * Parses the VLESS header from the client's first message.
- * @param {ArrayBuffer} buffer The incoming data from the client.
- */
-function parseVlessHeader(buffer) {
-  const view = new DataView(buffer);
-  if (view.getUint8(0) !== 0) throw new Error('Invalid VLESS version.');
+async function proxyConnection(serverWs, proxyAddress, targetAddress, targetPort, initialData) {
+    const [proxyClient, proxyServer] = Object.values(new WebSocketPair());
 
-  // Extract the 16-byte userID (UUID).
-  const receivedUserIDBytes = new Uint8Array(buffer.slice(1, 17));
-  const receivedUserID = Array.from(receivedUserIDBytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
-  const formattedUserID = `${receivedUserID.slice(0, 8)}-${receivedUserID.slice(8, 12)}-${receivedUserID.slice(12, 16)}-${receivedUserID.slice(16, 20)}-${receivedUserID.slice(20)}`;
+    const url = new URL(`https://${proxyAddress}`);
+    url.searchParams.set('remote', `${targetAddress}:${targetPort}`);
 
-  let offset = 17; // 1 (version) + 16 (UUID)
-
-  const protoOpt = view.getUint8(offset); // Addr type + Opt
-  offset += 1;
-
-  let address, port;
-  const addressType = protoOpt & 0x0F;
-
-  switch (addressType) {
-    case 1: // IPv4
-      address = new Uint8Array(buffer.slice(offset, offset + 4)).join('.');
-      offset += 4;
-      break;
-    case 2: // Domain
-      const domainLength = view.getUint8(offset);
-      offset += 1;
-      address = new TextDecoder().decode(buffer.slice(offset, offset + domainLength));
-      offset += domainLength;
-      break;
-    case 3: // IPv6
-      const ipv6 = new Uint16Array(buffer.slice(offset, offset + 16));
-      address = Array.from(ipv6).map(part => part.toString(16)).join(':');
-      offset += 16;
-      break;
-    default:
-      throw new Error(`Unsupported address type: ${addressType}`);
-  }
-
-  port = view.getUint16(offset);
-  offset += 2;
-
-  // The rest of the buffer is the initial data packet.
-  const data = buffer.slice(offset);
-
-  return { receivedUserID: formattedUserID, address, port, data };
-}
-
-/**
- * Establishes a TCP connection to the destination server.
- * @param {string} address The destination address (IP or domain).
- * @param {number} port The destination port.
- * @param {WebSocket} serverWs The server-side WebSocket for piping data.
- */
-async function connectToRemote(address, port, serverWs) {
-  // Use a proxy if configured and the address is not a private IP.
-  const proxy = proxyIPs.length > 0 && !isPrivateAddress(address)
-    ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)]
-    : null;
-
-  const connectOptions = {
-    hostname: address,
-    port: port,
-  };
-
-  // Connect to the destination, either directly or via a proxy.
-  const remoteSocket = await (proxy
-    ? fetch(`https://${proxy}/`, {
+    const proxyRequest = new Request(url, {
         method: 'CONNECT',
-        headers: { 'Host': `${address}:${port}` },
-      }).then(res => res.body.getReader()) // Simplified; real proxying is more complex.
-    : connect(connectOptions)
-  );
+        headers: { 'Upgrade': 'websocket' }
+    });
 
-  // Pipe data between the client WebSocket and the remote TCP socket.
-  pump(serverWs, remoteSocket);
-
-  return remoteSocket;
-}
-
-/**
- * Pipes data between the WebSocket and the remote socket.
- * @param {WebSocket} ws
- * @param {any} remoteSocket Readable/Writable stream for the remote connection.
- */
-function pump(ws, remoteSocket) {
-  // Forward data from remote to client
-  (async () => {
-    const reader = remoteSocket.readable.getReader();
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        ws.send(value);
-      }
+        const resp = await fetch(proxyRequest.url, {
+            method: proxyRequest.method,
+            headers: proxyRequest.headers,
+            body: proxyRequest.body,
+            redirect: 'follow'
+        });
+
+        if (resp.status !== 101) {
+            throw new Error(`Upstream proxy connection failed with status: ${resp.status}`);
+        }
+
+        const upstreamSocket = resp.webSocket;
+        if (!upstreamSocket) {
+             throw new Error("Upstream proxy did not return a WebSocket.");
+        }
+
+        upstreamSocket.accept();
+        upstreamSocket.send(initialData);
+
+        // Piping data
+        serverWs.addEventListener('message', e => upstreamSocket.send(e.data));
+        upstreamSocket.addEventListener('message', e => serverWs.send(e.data));
+
+        const closeHandler = () => {
+            if (serverWs.readyState !== WebSocket.CLOSED) serverWs.close();
+            if (upstreamSocket.readyState !== WebSocket.CLOSED) upstreamSocket.close();
+        };
+        serverWs.addEventListener('close', closeHandler);
+        serverWs.addEventListener('error', closeHandler);
+        upstreamSocket.addEventListener('close', closeHandler);
+        upstreamSocket.addEventListener('error', closeHandler);
+
     } catch (error) {
-      console.log('Remote read error:', error);
+        console.error("Proxy connection failed:", error);
+        serverWs.close(1011, "Proxy connection failed");
     }
-  })();
-
-  // Forward data from client to remote
-  ws.addEventListener('message', event => {
-    remoteSocket.write(event.data);
-  });
 }
 
-/**
- * A helper to check for private IP addresses.
- * @param {string} ip
- */
-function isPrivateAddress(ip) {
-    return /^(10(\.\d{1,3}){3}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|192\.168(\.\d{1,3}){2}|127(\.\d{1,3}){3}|\[::1\]|fe80::)/.test(ip);
-}
 
-// In a real Worker environment, 'connect' is provided by the runtime.
-// No declaration is needed here as it's a native part of the Cloudflare Workers API.
+function parseVlessHeader(buffer) {
+    const view = new DataView(buffer);
+    if (view.getUint8(0) !== 0) throw new Error('Invalid VLESS version.');
+
+    const receivedUserIDBytes = new Uint8Array(buffer.slice(1, 17));
+    const receivedUserID = Array.from(receivedUserIDBytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const formattedUserID = `${receivedUserID.slice(0, 8)}-${receivedUserID.slice(8, 12)}-${receivedUserID.slice(12, 16)}-${receivedUserID.slice(16, 20)}-${receivedUserID.slice(20)}`;
+
+    let offset = 17;
+    const protoOpt = view.getUint8(offset++);
+    let address, port;
+    const addressType = protoOpt & 0x0F;
+
+    switch (addressType) {
+        case 1: // IPv4
+            address = new Uint8Array(buffer.slice(offset, offset + 4)).join('.');
+            offset += 4;
+            break;
+        case 2: // Domain
+            const domainLength = view.getUint8(offset++);
+            address = new TextDecoder().decode(buffer.slice(offset, offset + domainLength));
+            offset += domainLength;
+            break;
+        case 3: // IPv6
+            address = Array.from(new Uint16Array(buffer.slice(offset, offset + 16))).map(p => p.toString(16)).join(':');
+            offset += 16;
+            break;
+        default:
+            throw new Error(`Unsupported address type: ${addressType}`);
+    }
+
+    port = view.getUint16(offset);
+    offset += 2;
+    const data = buffer.slice(offset);
+
+    return { receivedUserID: formattedUserID, address, port, data };
+}
