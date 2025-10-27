@@ -1,20 +1,20 @@
-# Server VLESS Mandiri di Cloudflare Worker (dengan Proxy Rotator & Wildcard)
+# Server VLESS Mandiri di Cloudflare Worker (Versi Mudah Dikelola)
 
-Selamat datang di versi final dan andal dari skrip VLESS Worker. Skrip ini **sepenuhnya mandiri** dan **tidak memerlukan VPS**.
+Selamat datang di versi final dari skrip VLESS Worker. Versi ini dirancang agar **sangat mudah dikelola** tanpa perlu mengedit kode setiap kali Anda ingin mengubah konfigurasi.
 
 ## Fitur Utama
 
--   **Server VLESS Penuh**: Menjalankan server VLESS langsung di infrastruktur Cloudflare.
--   **Proxy Rotator**: Menggunakan daftar proksi eksternal (yang Anda sediakan) sebagai jalur keluar ke internet. Ini meningkatkan anonimitas dan ketahanan.
--   **Metode Wildcard/Bug Host**: Menyamarkan (obfuscate) traffic Anda agar terlihat seperti menuju ke domain populer, sehingga lebih sulit dideteksi.
--   **Konfigurasi Mudah**: Semua pengaturan penting ada di bagian atas skrip.
--   **Halaman Info Bawaan**: Secara otomatis menghasilkan halaman dengan Kode QR dan link VLESS tanpa perlu URL eksternal.
+-   **Server VLESS Penuh**: Menjalankan server VLESS langsung di infrastruktur Cloudflare (tidak perlu VPS).
+-   **Dikelola via Variabel**: `UserID` dan `BugHost` diatur melalui Pengaturan Worker di Cloudflare, bukan di dalam kode.
+-   **Proxy Rotator**: Menggunakan daftar proksi eksternal (yang Anda sediakan) sebagai jalur keluar.
+-   **Metode Wildcard/Bug Host**: Menyamarkan traffic Anda.
+-   **Halaman Info Bawaan**: Menghasilkan Kode QR dan link VLESS secara otomatis.
 
 ---
 
 ## Langkah 1: Siapkan Daftar Proksi Anda
 
-Skrip ini membutuhkan setidaknya satu URL publik yang mengarah ke daftar proksi. Formatnya bisa berupa file `.json` atau `.txt`. Anda bisa menghosting file-file ini secara gratis di layanan seperti GitHub Gist atau raw.githubusercontent.com.
+Skrip ini membutuhkan URL publik yang mengarah ke daftar proksi Anda. Anda bisa menghostingnya di GitHub atau layanan serupa.
 
 -   **Contoh File JSON (`KV_PRX_URL`)**: [Lihat Contoh](https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json)
 -   **Contoh File Teks (`PRX_BANK_URL`)**: [Lihat Contoh](https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt)
@@ -23,49 +23,49 @@ Skrip ini membutuhkan setidaknya satu URL publik yang mengarah ke daftar proksi.
 
 ## Langkah 2: Konfigurasi DNS Wildcard
 
-Untuk menggunakan metode penyamaran (obfuscation), Anda harus mengatur record DNS wildcard untuk domain Anda.
+Anda harus mengatur record DNS wildcard untuk domain Anda. Ini hanya perlu dilakukan sekali.
 
-**➡️ Ikuti panduan lengkap di sini: [Panduan Pengaturan DNS Wildcard](./WILDCADC_SETUP.md)**
-
----
-
-## Langkah 3: Konfigurasi Skrip Worker
-
-Buka file `vless-worker.js` dan edit bagian `--- KONFIGURASI PENGGUNA ---` di bagian atas.
-
-1.  **`userID` (Wajib)**:
-    *   Masukkan UUID V2Ray pribadi Anda.
-
-2.  **`bugHost` (Opsional)**:
-    *   Ganti dengan domain populer pilihan Anda jika Anda tidak ingin menggunakan default.
-
-3.  **`KV_PRX_URL` (Wajib)**:
-    *   Masukkan URL ke file daftar proksi `.json` Anda.
-
-4.  **`PRX_BANK_URL` (Wajib)**:
-    *   Masukkan URL ke file daftar proksi `.txt` Anda.
+**➡️ Ikuti panduan lengkap di sini: [Panduan Pengaturan DNS Wildcard](./WILDCARD_SETUP.md)**
 
 ---
 
-## Langkah 4: Deploy & Tautkan Domain
+## Langkah 3: Deploy Worker & Atur Variabel (Paling Penting)
 
-1.  **Deploy Worker**:
-    *   Login ke Cloudflare > **Workers & Pages**.
-    *   Buat Worker baru, **hapus kode default**, lalu **salin & tempel seluruh isi** skrip `vless-worker.js` ini.
-    *   Klik **"Save and Deploy"**.
+Ini adalah langkah inti yang menggabungkan deployment dan konfigurasi.
 
-2.  **Tautkan Domain Kustom (PENTING)**:
-    *   Di halaman worker Anda, buka tab **"Triggers"**.
-    *   Klik **"Add Custom Domain"**.
-    *   Masukkan domain wildcard Anda (misalnya, `*.domainanda.com`).
-    *   Klik **"Add Custom Domain"**.
+1.  **Login ke Cloudflare** > **Workers & Pages**.
+2.  Klik **"Create Application"** > **"Create Worker"**. Beri nama unik dan klik **"Create service"**.
+3.  Klik **"Quick edit"**. **Hapus kode default**, lalu **salin & tempel seluruh isi** dari file `vless-worker.js` proyek ini.
+4.  Klik **"Save and Deploy"**.
+
+5.  **Sekarang, atur variabelnya:**
+    *   Kembali ke halaman utama worker Anda, klik tab **"Settings"**.
+    *   Pilih submenu **"Variables"**.
+    *   Di bawah bagian **"Environment Variables"**, klik **"Add variable"** untuk setiap item di bawah ini:
+
+| Variable Name  | Value                                                                                            | Keterangan                                     |
+| :------------- | :----------------------------------------------------------------------------------------------- | :--------------------------------------------- |
+| `USER_ID`      | `d342d11e-d424-4583-b36e-524ab1f0afa4`                                                            | **(Wajib)** Ganti dengan UUID V2Ray Anda.      |
+| `BUG_HOST`     | `api24-normal-alisg.tiktokv.com`                                                                 | (Opsional) Ganti dengan bug host pilihan Anda. |
+| `KV_PRX_URL`   | `https://raw.githubusercontent.com/..`                                                           | **(Wajib)** URL ke file `.json` proksi Anda.   |
+| `PRX_BANK_URL` | `https://raw.githubusercontent.com/..`                                                           | **(Wajib)** URL ke file `.txt` proksi Anda.    |
+
+    *   **PENTING**: Untuk `USER_ID`, Anda bisa mengklik **"Encrypt"** untuk keamanan tambahan.
+    *   Setelah menambahkan semua variabel, klik **"Save and Deploy"** sekali lagi di bagian atas halaman untuk menerapkan perubahan.
 
 ---
 
-## Langkah 5: Dapatkan dan Gunakan Konfigurasi VLESS
+## Langkah 4: Tautkan Domain Kustom
 
-1.  **Buka salah satu subdomain wildcard Anda** di browser (misalnya, `https://sub-acak.domainanda.com`).
+1.  Di halaman worker Anda, klik tab **"Triggers"**.
+2.  Di bawah "Custom Domains", klik **"Add Custom Domain"**.
+3.  Masukkan domain wildcard Anda (misalnya, `*.domainanda.com`).
+4.  Klik **"Add Custom Domain"**.
+
+---
+
+## Langkah 5: Dapatkan dan Gunakan Konfigurasi
+
+1.  Buka **salah satu subdomain wildcard Anda** di browser (misalnya, `https://sub-acak.domainanda.com`).
 2.  Halaman informasi akan muncul. **Pindai Kode QR** atau **Salin URL VLESS** ke klien V2Ray Anda.
-3.  Hubungkan dan nikmati!
-
-Server VLESS mandiri Anda sekarang berfungsi.
+3.  Selesai! Anda sekarang dapat mengubah `BUG_HOST` kapan pun hanya dengan mengedit variabel di Pengaturan Worker.

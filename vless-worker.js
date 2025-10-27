@@ -1,23 +1,13 @@
-// --- KONFIGURASI PENGGUNA ---
-
-// Ganti dengan UUID V2Ray Anda.
-const userID = 'd342d11e-d424-4583-b36e-524ab1f0afa4';
-
-// Ganti dengan domain "palsu" yang ingin Anda gunakan untuk menyamarkan traffic.
-const bugHost = 'api24-normal-alisg.tiktokv.com';
-
-// (WAJIB) URL ke file JSON daftar proksi KV Anda.
-// Contoh format file: https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json
-const KV_PRX_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json";
-
-// (WAJIB) URL ke file .txt daftar proksi cadangan Anda.
-// Contoh format file: https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt
-const PRX_BANK_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt";
-
-// --- AKHIR DARI KONFIGURASI PENGGUNA ---
+// --- Variabel Lingkungan (diatur di Pengaturan Worker Cloudflare) ---
+// USER_ID      - UUID V2Ray Anda.
+// BUG_HOST     - Domain "palsu" untuk menyamarkan traffic.
+// KV_PRX_URL   - URL ke file .json daftar proksi KV Anda.
+// PRX_BANK_URL - URL ke file .txt daftar proksi cadangan Anda.
+// --------------------------------------------------------------------
 
 
 // --- HALAMAN HTML BAWAAN ---
+// Placeholder __USER_ID__ dan __BUG_HOST__ akan diganti secara dinamis.
 const subHTML = `
 <!DOCTYPE html>
 <html>
@@ -58,7 +48,7 @@ const subHTML = `
         navigator.clipboard.writeText(vlessLink).then(() => alert('VLESS link copied!'));
       });
     }
-    generateVlessLink("${userID}", "${bugHost}", window.location.hostname);
+    generateVlessLink("__USER_ID__", "__BUG_HOST__", window.location.hostname);
   </script>
 </body>
 </html>
@@ -70,52 +60,55 @@ let proxyLists = null;
 let lastFetchTime = 0;
 const CACHE_DURATION = 15 * 60 * 1000; // 15 menit
 
-async function fetchProxyLists() {
+export default {
+    async fetch(request, env, ctx) {
+        // Ambil konfigurasi dari Variabel Lingkungan dengan nilai default sebagai cadangan
+        const userID = env.USER_ID || 'd342d11e-d424-4583-b36e-524ab1f0afa4';
+        const bugHost = env.BUG_HOST || 'api24-normal-alisg.tiktokv.com';
+        const KV_PRX_URL = env.KV_PRX_URL || "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json";
+        const PRX_BANK_URL = env.PRX_BANK_URL || "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt";
+
+        const url = new URL(request.url);
+
+        if (url.pathname === '/') {
+            // Ganti placeholder di HTML dengan nilai dari variabel
+            const finalHtml = subHTML
+                .replace(/__USER_ID__/g, userID)
+                .replace(/__BUG_HOST__/g, bugHost);
+            return new Response(finalHtml, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+        } else {
+            return handleVlessRequest(request, { userID, KV_PRX_URL, PRX_BANK_URL });
+        }
+    }
+};
+
+async function fetchProxyLists(KV_PRX_URL, PRX_BANK_URL) {
     const now = Date.now();
     if (proxyLists && (now - lastFetchTime < CACHE_DURATION)) {
         return proxyLists;
     }
-
     try {
         const [kvResponse, bankResponse] = await Promise.all([
             fetch(KV_PRX_URL).then(res => res.json()),
             fetch(PRX_BANK_URL).then(res => res.text())
         ]);
-
         const bankProxies = bankResponse.trim().split('\n').map(p => p.trim());
         const combined = [...kvResponse.proxy, ...bankProxies];
         proxyLists = [...new Set(combined)]; // Hapus duplikat
         lastFetchTime = now;
-        console.log(`Successfully fetched and combined ${proxyLists.length} proxies.`);
     } catch (error) {
         console.error("Failed to fetch proxy lists:", error);
-        // Jika gagal, gunakan daftar yang lama jika ada
-        if (!proxyLists) {
-            proxyLists = [];
-        }
+        if (!proxyLists) proxyLists = [];
     }
     return proxyLists;
 }
 
 function getRandomProxy() {
-    if (!proxyLists || proxyLists.length === 0) {
-        return null;
-    }
-    const randomIndex = Math.floor(Math.random() * proxyLists.length);
-    return proxyLists[randomIndex];
+    if (!proxyLists || proxyLists.length === 0) return null;
+    return proxyLists[Math.floor(Math.random() * proxyLists.length)];
 }
 
-
-addEventListener('fetch', event => {
-    const url = new URL(event.request.url);
-    if (url.pathname === '/') {
-        event.respondWith(new Response(subHTML, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } }));
-    } else {
-        event.respondWith(handleVlessRequest(event.request));
-    }
-});
-
-async function handleVlessRequest(request) {
+async function handleVlessRequest(request, config) {
     if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('Expected websocket', { status: 426 });
     }
@@ -126,12 +119,12 @@ async function handleVlessRequest(request) {
     serverWs.addEventListener('message', async (event) => {
         try {
             const { receivedUserID, address, port, data } = parseVlessHeader(event.data);
-            if (receivedUserID !== userID) {
+            if (receivedUserID !== config.userID) {
                 serverWs.close(1008, 'Invalid user');
                 return;
             }
 
-            await fetchProxyLists();
+            await fetchProxyLists(config.KV_PRX_URL, config.PRX_BANK_URL);
             const proxyAddress = getRandomProxy();
             if (!proxyAddress) {
                 serverWs.close(1011, 'No available proxy');
@@ -139,7 +132,6 @@ async function handleVlessRequest(request) {
             }
 
             proxyConnection(serverWs, proxyAddress, address, port, data);
-
         } catch (err) {
             serverWs.close(1011, err.message);
         }
@@ -149,37 +141,23 @@ async function handleVlessRequest(request) {
 }
 
 async function proxyConnection(serverWs, proxyAddress, targetAddress, targetPort, initialData) {
-    const [proxyClient, proxyServer] = Object.values(new WebSocketPair());
-
     const url = new URL(`https://${proxyAddress}`);
     url.searchParams.set('remote', `${targetAddress}:${targetPort}`);
 
-    const proxyRequest = new Request(url, {
-        method: 'CONNECT',
-        headers: { 'Upgrade': 'websocket' }
-    });
-
     try {
-        const resp = await fetch(proxyRequest.url, {
-            method: proxyRequest.method,
-            headers: proxyRequest.headers,
-            body: proxyRequest.body,
-            redirect: 'follow'
+        const resp = await fetch(url.toString(), {
+            method: 'CONNECT',
+            headers: { 'Upgrade': 'websocket' }
         });
 
-        if (resp.status !== 101) {
-            throw new Error(`Upstream proxy connection failed with status: ${resp.status}`);
-        }
+        if (resp.status !== 101) throw new Error(`Upstream failed with status: ${resp.status}`);
 
         const upstreamSocket = resp.webSocket;
-        if (!upstreamSocket) {
-             throw new Error("Upstream proxy did not return a WebSocket.");
-        }
+        if (!upstreamSocket) throw new Error("Upstream did not return a WebSocket.");
 
         upstreamSocket.accept();
         upstreamSocket.send(initialData);
 
-        // Piping data
         serverWs.addEventListener('message', e => upstreamSocket.send(e.data));
         upstreamSocket.addEventListener('message', e => serverWs.send(e.data));
 
@@ -191,13 +169,11 @@ async function proxyConnection(serverWs, proxyAddress, targetAddress, targetPort
         serverWs.addEventListener('error', closeHandler);
         upstreamSocket.addEventListener('close', closeHandler);
         upstreamSocket.addEventListener('error', closeHandler);
-
     } catch (error) {
         console.error("Proxy connection failed:", error);
         serverWs.close(1011, "Proxy connection failed");
     }
 }
-
 
 function parseVlessHeader(buffer) {
     const view = new DataView(buffer);
@@ -213,16 +189,16 @@ function parseVlessHeader(buffer) {
     const addressType = protoOpt & 0x0F;
 
     switch (addressType) {
-        case 1: // IPv4
+        case 1:
             address = new Uint8Array(buffer.slice(offset, offset + 4)).join('.');
             offset += 4;
             break;
-        case 2: // Domain
+        case 2:
             const domainLength = view.getUint8(offset++);
             address = new TextDecoder().decode(buffer.slice(offset, offset + domainLength));
             offset += domainLength;
             break;
-        case 3: // IPv6
+        case 3:
             address = Array.from(new Uint16Array(buffer.slice(offset, offset + 16))).map(p => p.toString(16)).join(':');
             offset += 16;
             break;
